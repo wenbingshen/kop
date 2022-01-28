@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import static io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.TopicKey;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -28,6 +29,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -66,7 +68,7 @@ class AdminManager {
 
     private volatile Map<String, Set<Node>> brokersCache = Maps.newHashMap();
     private final ReentrantReadWriteLock brokersCacheLock = new ReentrantReadWriteLock();
-
+    private final Random random = new Random();
 
     public AdminManager(PulsarAdmin admin, KafkaServiceConfiguration conf) {
         this.admin = admin;
@@ -445,4 +447,12 @@ class AdminManager {
         }
     }
 
+    public Node getController(String listenerName) {
+        final List<Node> brokers = Lists.newArrayList(getBrokers(listenerName));
+        if (brokers.size() == 0) {
+            return null;
+        }
+
+        return brokers.size() > 1 ? brokers.get(random.nextInt(brokers.size())) : brokers.get(0);
+    }
 }

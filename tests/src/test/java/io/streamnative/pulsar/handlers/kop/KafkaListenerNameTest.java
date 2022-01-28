@@ -27,11 +27,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -169,6 +174,37 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
 
         kafkaProducerSend("localhost:" + kafkaBrokerPort);
         kafkaProducerSend("localhost:" + externalPort);
+
+        super.internalCleanup();
+    }
+
+    @Test(timeOut = 30000)
+    public void testCreateTopicForMultiListeners() throws Exception {
+        final Map<Integer, InetSocketAddress> bindPortToAdvertisedAddress = new HashMap<>();
+        final int anotherKafkaPort = PortManager.nextFreePort();
+        bindPortToAdvertisedAddress.put(kafkaBrokerPort,
+                InetSocketAddress.createUnresolved("192.168.0.1", PortManager.nextFreePort()));
+        bindPortToAdvertisedAddress.put(anotherKafkaPort,
+                InetSocketAddress.createUnresolved("192.168.0.2", PortManager.nextFreePort()));
+
+        super.resetConfig();
+        conf.setKafkaListeners("PLAINTEXT://0.0.0.0:" + kafkaBrokerPort + ",GW://0.0.0.0:" + anotherKafkaPort);
+        conf.setKafkaProtocolMap("PLAINTEXT:PLAINTEXT,GW:PLAINTEXT");
+
+        conf.setKafkaAdvertisedListeners(String.format("PLAINTEXT://%s,GW://%s",
+                bindPortToAdvertisedAddress.get(kafkaBrokerPort),
+                bindPortToAdvertisedAddress.get(anotherKafkaPort)));
+        super.internalSetup();
+
+        final Properties adminProps = new Properties();
+        adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + anotherKafkaPort);
+        @Cleanup final AdminClient adminClient = AdminClient.create(adminProps);
+        final NewTopic newTopic = new NewTopic("test-controller", 2, (short) 1);
+        adminClient.createTopics(Collections.singleton(newTopic)).all().get();
+
+        // verify new create topic
+        Set<String> listTopics = adminClient.listTopics().names().get();
+        Assert.assertTrue(listTopics.contains(newTopic.name()));
 
         super.internalCleanup();
     }
